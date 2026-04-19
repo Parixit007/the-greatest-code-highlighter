@@ -1,0 +1,64 @@
+{
+  "name": "the-greatest-code-highlighter",
+  "displayName": "The Greatest Code Highlighter",
+  "description": "Highlight code blocks and share them via a sidecar JSON file",
+  "version": "0.0.1",
+  "publisher": "parixit singh",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "codeHighlighter.highlightSelection", "title": "Highlight: Pick Color" },
+      { "command": "codeHighlighter.cycleHighlight",     "title": "Highlight: Cycle Color" },
+      { "command": "codeHighlighter.removeSelected",     "title": "Highlight: Remove Selected" },
+      { "command": "codeHighlighter.removeAll",          "title": "Highlight: Remove All in File" },
+      { "command": "codeHighlighter.clearOrphans",       "title": "Highlight: Clear Orphans" }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "codeHighlighter.highlightSelection", "group": "highlight@1", "when": "editorHasSelection" },
+        { "command": "codeHighlighter.removeAll",          "group": "highlight@2", "when": "editorTextFocus" }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "codeHighlighter.cycleHighlight",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "codeHighlighter.removeAll",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.39",
+    "@types/uuid": "^9.0.0",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "uuid": "^9.0.0"
+  }
+}

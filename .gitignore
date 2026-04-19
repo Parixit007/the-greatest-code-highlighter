@@ -1,0 +1,6 @@
+out/
+node_modules/
+highlight.json
+*.js.map
+.vscode-test/
+*.vsix
