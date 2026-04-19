@@ -4,3 +4,4 @@ highlight.json
 *.js.map
 .vscode-test/
 *.vsix
+.DS_Store
