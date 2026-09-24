@@ -2,8 +2,13 @@
   "name": "the-greatest-code-highlighter",
   "displayName": "The Greatest Code Highlighter",
   "description": "Highlight code blocks and share them via a sidecar JSON file",
-  "version": "0.0.1",
-  "publisher": "parixit singh",
+  "version": "0.1.0",
+  "publisher": "parixit007",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Parixit007/the-greatest-code-highlighter"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -14,6 +19,9 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": true }
+  },
   "contributes": {
     "commands": [
       { "command": "codeHighlighter.highlightSelection", "title": "Highlight: Pick Color" },
@@ -25,7 +33,8 @@
     "menus": {
       "editor/context": [
         { "command": "codeHighlighter.highlightSelection", "group": "highlight@1", "when": "editorHasSelection" },
-        { "command": "codeHighlighter.removeAll",          "group": "highlight@2", "when": "editorTextFocus" }
+        { "command": "codeHighlighter.removeSelected",     "group": "highlight@2", "when": "codeHighlighter.selectionHasHighlight" },
+        { "command": "codeHighlighter.removeAll",          "group": "highlight@3", "when": "codeHighlighter.fileHasHighlights" }
       ]
     },
     "keybindings": [
@@ -37,28 +46,27 @@
       },
       {
         "command": "codeHighlighter.removeAll",
-        "key": "ctrl+shift+l",
-        "mac": "cmd+shift+l",
+        "key": "ctrl+shift+alt+l",
+        "mac": "cmd+shift+alt+l",
         "when": "editorTextFocus"
       }
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run clean && npm run compile",
+    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "test": "npm run compile && node --test \"out/test/unit/**/*.test.js\"",
+    "test:integration": "npm run compile && node scripts/run-integration-tests.js"
   },
   "devDependencies": {
     "@types/node": "^20.19.39",
-    "@types/uuid": "^9.0.0",
-    "@types/vscode": "^1.80.0",
+    "@types/vscode": "~1.80.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.0.0",
     "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "uuid": "^9.0.0"
   }
 }

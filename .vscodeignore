@@ -1,0 +1,8 @@
+# Package only what the extension needs at runtime. vsce applies every "!"
+# pattern after all ignore patterns, so list the runtime folders explicitly.
+**
+!package.json
+!readme.md
+!LICENSE
+!out/*.js
+!out/core/*.js
