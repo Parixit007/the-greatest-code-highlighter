@@ -1,114 +1,87 @@
 // src/decorationManager.ts
+//
+// Paints highlights into editors. One decoration type per color, created once
+// and reused: creating decoration types per paint leaks them.
 
 import * as vscode from 'vscode';
-import { Highlight, HighlightColor } from './types';
+import { COLORS, COLOR_STYLES } from './core/colors';
+import { HighlightColor } from './core/types';
+import { LiveHighlight } from './documentSession';
 
-// ─── Color Definitions ───────────────────────────────────────────────────────
-// One DecorationType per color, created once and reused forever.
-// Never create these inside a loop — VS Code leaks them.
+/** How many lines of a lost highlight's code its hover shows. */
+const LOST_PREVIEW_LINES = 8;
 
-const COLOR_STYLES: Record<HighlightColor, vscode.DecorationRenderOptions> = {
-  red:   { backgroundColor: 'rgba(255, 99,  99,  0.25)', borderRadius: '2px' },
-  blue:  { backgroundColor: 'rgba(99,  149, 255, 0.25)', borderRadius: '2px' },
-  green: { backgroundColor: 'rgba(99,  255, 132, 0.25)', borderRadius: '2px' },
-  pink:  { backgroundColor: 'rgba(255, 99,  220, 0.25)', borderRadius: '2px' },
-  cyan:  { backgroundColor: 'rgba(99,  229, 255, 0.25)', borderRadius: '2px' },
-  yellow: { backgroundColor: 'rgba(255, 220, 50,  0.25)', borderRadius: '2px' },
-};
-
-// Decoration type for orphaned highlights — strikethrough + muted
-const ORPHAN_STYLE: vscode.DecorationRenderOptions = {
-  backgroundColor: 'rgba(180, 180, 180, 0.2)',
-  borderRadius: '2px',
-  textDecoration: 'line-through',
-  after: {
-    contentText: ' ⚠ lost',
-    color: 'rgba(180, 180, 180, 0.8)',
-    fontStyle: 'italic',
-    margin: '0 0 0 6px',
-  },
-};
-
-export class DecorationManager {
-  private types: Record<HighlightColor, vscode.TextEditorDecorationType>;
-  private orphanType: vscode.TextEditorDecorationType;
+export class DecorationManager implements vscode.Disposable {
+  private readonly types = new Map<HighlightColor, vscode.TextEditorDecorationType>();
+  private readonly lostType: vscode.TextEditorDecorationType;
 
   constructor() {
-    this.types = {
-      red:   vscode.window.createTextEditorDecorationType(COLOR_STYLES.red),
-      blue:  vscode.window.createTextEditorDecorationType(COLOR_STYLES.blue),
-      green: vscode.window.createTextEditorDecorationType(COLOR_STYLES.green),
-      pink:  vscode.window.createTextEditorDecorationType(COLOR_STYLES.pink),
-      cyan:  vscode.window.createTextEditorDecorationType(COLOR_STYLES.cyan),
-     yellow: vscode.window.createTextEditorDecorationType(COLOR_STYLES.yellow),
-    };
-    this.orphanType = vscode.window.createTextEditorDecorationType(ORPHAN_STYLE);
+    for (const color of COLORS) {
+      this.types.set(color, vscode.window.createTextEditorDecorationType({
+        backgroundColor: COLOR_STYLES[color].background,
+        borderRadius: '2px',
+        overviewRulerColor: COLOR_STYLES[color].ruler,
+        overviewRulerLane: vscode.OverviewRulerLane.Center,
+        rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+      }));
+    }
+    this.lostType = vscode.window.createTextEditorDecorationType({
+      overviewRulerColor: 'rgba(160, 160, 160, 0.8)',
+      overviewRulerLane: vscode.OverviewRulerLane.Center,
+      rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+      after: {
+        color: new vscode.ThemeColor('editorCodeLens.foreground'),
+        fontStyle: 'italic',
+        margin: '0 0 0 2em',
+      },
+    });
   }
 
-  // ─── Apply ───────────────────────────────────────────────────────────────
-  // Call this any time highlights change for an editor.
-  // It clears all existing decorations and repaints from scratch.
-
-  applyToEditor(editor: vscode.TextEditor, highlights: Highlight[]): void {
-    // Bucket highlights by color (skip orphans — handled separately)
-    const buckets = new Map<HighlightColor, vscode.Range[]>();
-    const orphanRanges: vscode.Range[] = [];
+  /** Repaints every highlight in `editor`. Always pass the document's complete list. */
+  paint(editor: vscode.TextEditor, highlights: readonly LiveHighlight[]): void {
+    const doc = editor.document;
+    const byColor = new Map<HighlightColor, vscode.Range[]>();
+    const lostByLine = new Map<number, LiveHighlight[]>();
 
     for (const h of highlights) {
-      const range = this.toVscodeRange(h);
-
-      if (h.orphaned) {
-        orphanRanges.push(range);
+      if (h.lostAt) {
+        const line = Math.min(h.lostAt.line, doc.lineCount - 1);
+        lostByLine.set(line, [...(lostByLine.get(line) ?? []), h]);
         continue;
       }
-
-      if (!buckets.has(h.color)) {
-        buckets.set(h.color, []);
-      }
-      buckets.get(h.color)!.push(range);
+      const range = doc.validateRange(new vscode.Range(h.range.startLine, h.range.startChar, h.range.endLine, h.range.endChar));
+      byColor.set(h.color, [...(byColor.get(h.color) ?? []), range]);
     }
 
-    // Paint each color bucket
-    for (const color of Object.keys(this.types) as HighlightColor[]) {
-      editor.setDecorations(this.types[color], buckets.get(color) ?? []);
-    }
-
-    // Paint orphans
-    editor.setDecorations(this.orphanType, orphanRanges);
+    for (const [color, type] of this.types) editor.setDecorations(type, byColor.get(color) ?? []);
+    editor.setDecorations(this.lostType, [...lostByLine].map(([line, lost]) => ({
+      range: doc.lineAt(line).range,
+      hoverMessage: lostHover(lost, doc.languageId),
+      renderOptions: {
+        after: { contentText: lost.length === 1 ? '⚠ lost highlight' : `⚠ ${lost.length} lost highlights` },
+      },
+    })));
   }
 
-  // ─── Clear ───────────────────────────────────────────────────────────────
-  // Wipe all highlights from an editor without touching the data layer.
-
-  clearEditor(editor: vscode.TextEditor): void {
-    for (const type of Object.values(this.types)) {
-      editor.setDecorations(type, []);
-    }
-    editor.setDecorations(this.orphanType, []);
+  clear(editor: vscode.TextEditor): void {
+    for (const type of this.types.values()) editor.setDecorations(type, []);
+    editor.setDecorations(this.lostType, []);
   }
-
-  // ─── Cycle Color ─────────────────────────────────────────────────────────
-  // Used by the keyboard shortcut. Returns the next color in sequence,
-  // or undefined if the cycle has passed through "no color".
-
- readonly COLORS: HighlightColor[] = ['red', 'blue', 'green', 'pink', 'cyan', 'yellow'];
-
-  // ─── Dispose ─────────────────────────────────────────────────────────────
-  // Call on extension deactivate. Prevents VS Code decoration leaks.
 
   dispose(): void {
-    for (const type of Object.values(this.types)) {
-      type.dispose();
-    }
-    this.orphanType.dispose();
+    for (const type of this.types.values()) type.dispose();
+    this.lostType.dispose();
   }
+}
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────
-
-  private toVscodeRange(h: Highlight): vscode.Range {
-    return new vscode.Range(
-      h.range.startLine, h.range.startChar,
-      h.range.endLine,   h.range.endChar
-    );
+function lostHover(lost: readonly LiveHighlight[], languageId: string): vscode.MarkdownString {
+  const md = new vscode.MarkdownString();
+  for (const h of lost) {
+    md.appendMarkdown(`**Lost ${h.color} highlight** — the code it marked was changed or deleted:\n`);
+    const lines = h.text.split('\n');
+    const preview = lines.slice(0, LOST_PREVIEW_LINES).join('\n') + (lines.length > LOST_PREVIEW_LINES ? '\n…' : '');
+    md.appendCodeblock(preview, languageId);
   }
+  md.appendMarkdown('Run **Highlight: Clear Orphans** to remove lost highlights from this file.');
+  return md;
 }
